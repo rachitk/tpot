@@ -444,12 +444,12 @@ class PytorchConvClassifier(PytorchClassifier):
 
         X = torch.tensor(X, dtype=torch.float32).to(self.device)
 
-        predictions = np.empty(self.input_size[0], dtype=int)
+        predictions = np.empty(X_size[0], dtype=int)
 
         #Feed each image into the network (in the appropriate size for the network)
         #Then store only the most highly predicted class
         for i, image in enumerate(X):
-            image = Variable(image.view(1, -1, self.input_size[1], self.input_size[2]))
+            image = Variable(image.view(1, -1, X_size[1], X_size[2]))
             outputs = self.network(image)
 
             _, predicted = torch.max(outputs.data, 1)
