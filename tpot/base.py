@@ -78,6 +78,7 @@ from .config.classifier_sparse import classifier_config_sparse
 from .config.classifier_nn import classifier_config_nn
 from .config.classifier_cuml import classifier_config_cuml
 from .config.regressor_cuml import regressor_config_cuml
+from .config.classifier_vision import classifier_config_vision
 
 from .metrics import SCORERS
 from .gp_types import Output_Array
@@ -393,6 +394,8 @@ class TPOTBase(BaseEstimator):
                     self._config_dict = classifier_config_cuml
                 else:
                     self._config_dict = regressor_config_cuml
+            elif config_dict == "TPOT vision":
+                self._config_dict = classifier_config_vision
             else:
                 config = self._read_config_file(config_dict)
                 if hasattr(config, "tpot_config"):
@@ -628,6 +631,7 @@ class TPOTBase(BaseEstimator):
         self._fitted_imputer = None
         self._imputed = False
         self._memory = None  # initial Memory setting for sklearn pipeline
+        self._allow_nd = False
 
         # dont save periodic pipelines more often than this
         self._output_best_pipeline_period_seconds = 30
@@ -1375,15 +1379,20 @@ class TPOTBase(BaseEstimator):
             if self._imputed:
                 features = self._impute_values(features)
 
+        # If config is TPOT vision, allow n-dimensional inputs (these will be assumed to be images)
+        # This means allowing X/feature arrays that are not 2D; for now, targets will still need to be 1D classes
+        if self.config_dict == "TPOT vision":
+            self._allow_nd = True
+
         try:
             if target is not None:
-                X, y = check_X_y(features, target, accept_sparse=True, dtype=None)
+                X, y = check_X_y(features, target, accept_sparse=True, dtype=None, allow_nd=self._allow_nd)
                 if self._imputed:
                     return X, y
                 else:
                     return features, target
             else:
-                X = check_array(features, accept_sparse=True, dtype=None)
+                X = check_array(features, accept_sparse=True, dtype=None, allow_nd=self._allow_nd)
                 if self._imputed:
                     return X
                 else:

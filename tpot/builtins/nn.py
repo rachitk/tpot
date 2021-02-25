@@ -158,12 +158,18 @@ class PytorchClassifier(PytorchEstimator, ClassifierMixin):
         # - Non-finite inputs
         # - Complex inputs
 
-        X, y = check_X_y(X, y, accept_sparse=False, allow_nd=False)
+        # Check to see if the Pytorch estimator has the n-d attribute set
+        # In future, should probably just explicitly define this for all estimators that inherit this class
+        if hasattr(self, "allow_nd"):
+            X, y = check_X_y(X, y, accept_sparse=False, allow_nd=self.allow_nd)
+        else:
+            X, y = check_X_y(X, y, accept_sparse=False, allow_nd=False)
+
 
         assert_all_finite(X, y)
 
-        if type_of_target(y) != 'binary':
-            raise ValueError("Non-binary targets not supported")
+        #if type_of_target(y) != 'binary':
+        #    raise ValueError("Non-binary targets not supported")
 
         if np.any(np.iscomplex(X)) or np.any(np.iscomplex(y)):
             raise ValueError("Complex data not supported")
@@ -179,7 +185,11 @@ class PytorchClassifier(PytorchEstimator, ClassifierMixin):
     def predict(self, X):
         # pylint: disable=no-member
 
-        X = check_array(X, accept_sparse=True)
+        if hasattr(self, "allow_nd"):
+            X = check_array(X, accept_sparse=True, allow_nd=self.allow_nd)
+        else:
+            X = check_array(X, accept_sparse=True, allow_nd=False)
+
         check_is_fitted(self, 'is_fitted_')
 
         X = torch.tensor(X, dtype=torch.float32).to(self.device)
@@ -224,6 +234,24 @@ class _MLP(nn.Module):
         out = self.fc2(r1)
         return out
 
+class _CONV(nn.Module):
+    # pylint: disable=arguments-differ
+    def __init__(self, input_size, num_classes):
+        super(_CONV, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=3, kernel_size=2)
+        self.maxpool = nn.MaxPool2d(2)
+        self.conv2 = nn.Conv2d(in_channels=3, out_channels=6, kernel_size=2)
+        self.fc1 = nn.Linear(6*2*2, 10)
+        self.relu = nn.Tanh()
+
+    def forward(self, x):
+        x_conv1 = self.relu(self.conv1(x))
+        x_pool = self.maxpool(x_conv1)
+        x_conv2 = self.relu(self.conv2(x_pool))
+        x_view = x_conv2.view(-1, 6*2*2)
+        out = self.fc1(x_view)
+        return out
 
 class PytorchLRClassifier(PytorchClassifier):
     """Logistic Regression classifier, implemented in PyTorch, for use with
@@ -334,3 +362,98 @@ class PytorchMLPClassifier(PytorchClassifier):
 
     def _more_tags(self):
         return {'non_deterministic': True, 'binary_only': True}
+
+class PytorchConvClassifier(PytorchClassifier):
+    """Convolutional layer classifier, implemented in PyTorch, for use with TPOT.
+    """
+
+    def __init__(
+        self,
+        num_epochs=10,
+        batch_size=8,
+        learning_rate=0.01,
+        weight_decay=0,
+        verbose=False,
+        num_conv_layers=1
+    ):
+        self.num_epochs = num_epochs
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+        self.verbose = verbose
+        self.num_conv_layers=num_conv_layers
+
+        self.input_size = None
+        self.num_classes = None
+        self.network = None
+        self.loss_function = None
+        self.optimizer = None
+        self.data_loader = None
+        self.train_dset_len = None
+        self.device = None
+
+        #Unique classifier that allows for N-D inputs (assumed to be images)
+        self.allow_nd = True
+
+    def _init_model(self, X, y):
+        device = _get_cuda_device_if_available()
+
+        X, y = self.validate_inputs(X, y)
+
+        self.input_size = X.shape
+        self.num_classes = len(set(y))
+
+        # Place X into the expected form if only 1 channel input but as a 3D array
+        # (as expected size is 4D with [N, 1, H, W])
+        if(X.ndim == 3):
+            X = X.reshape(self.input_size[0], -1, self.input_size[1], self.input_size[2])
+
+        X = torch.tensor(X, dtype=torch.float32)
+        y = torch.tensor(y, dtype=torch.long)
+
+        train_dset = TensorDataset(X, y)
+
+        # Set parameters of the network
+        self.network = _CONV(self.input_size, self.num_classes).to(device)
+        self.loss_function = nn.CrossEntropyLoss()
+        self.optimizer = Adam(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        self.data_loader = DataLoader(
+            train_dset, batch_size=self.batch_size, shuffle=True, num_workers=2
+        )
+        self.train_dset_len = len(train_dset)
+        self.device = device
+
+    def _more_tags(self):
+        return {'non_deterministic': True, 'binary_only': True}
+
+
+    def predict(self, X):
+        """Special predict method for convolutional implementations
+        Will make super class handle this properly in the future
+        """
+
+        if hasattr(self, "allow_nd"):
+            X = check_array(X, accept_sparse=True, allow_nd=self.allow_nd)
+        else:
+            X = check_array(X, accept_sparse=True, allow_nd=False)
+
+        X_size = X.shape
+
+        if(X.ndim == 3):
+            X = X.reshape(X_size[0], -1, X_size[1], X_size[2])
+
+        X = torch.tensor(X, dtype=torch.float32).to(self.device)
+
+        predictions = np.empty(self.input_size[0], dtype=int)
+
+        #Feed each image into the network (in the appropriate size for the network)
+        #Then store only the most highly predicted class
+        for i, image in enumerate(X):
+            image = Variable(image.view(1, -1, self.input_size[1], self.input_size[2]))
+            outputs = self.network(image)
+
+            _, predicted = torch.max(outputs.data, 1)
+            predictions[i] = int(predicted)
+        return predictions.reshape(-1, 1)
+
+
