@@ -249,36 +249,49 @@ class _CONV(nn.Module):
         #Size calculated using [(W-K+2P)/S + 1], with P=0 and S=1 (no padding, stride=1)
         #Out_size in format [H, W, C]
         #All convolutional layers will have a ReLU following it
-        k_sizes = [max(1, int(np.floor(input_size[2]*kernel_proportion_x))), 
-            int(max(1, np.floor(input_size[3]*kernel_proportion_y)))]
+        #If a kernel is 1x1 then no need to continue convolutions
+
+        k_sizes = [max(1., np.floor(input_size[2]*kernel_proportion_x)), 
+            max(1., np.floor(input_size[3]*kernel_proportion_y))]
         out_sizes = [input_size[2]-k_sizes[0]+1, input_size[3]-k_sizes[1]+1, 
             input_size[1]*featureset_expansion_per_convlayer]
 
-
         self.conv_layers = nn.ModuleList()
-        conv1 = nn.Conv2d(in_channels=input_size[1], out_channels=out_sizes[2], kernel_size=tuple(k_sizes))
+        conv1 = nn.Conv2d(in_channels=int(input_size[1]), out_channels=int(out_sizes[2]), 
+            kernel_size=(int(k_sizes[0]), int(k_sizes[1])))
         self.conv_layers.append(conv1)
         self.conv_layers.append(nn.ReLU())
 
         conv_layers_used = 1
 
         for i in range(1, num_conv_layers):
-            next_ksizes = [max(1, int(np.floor(out_sizes[i-1][0]*kernel_proportion_x))), 
-                max(1, int(np.floor(out_sizes[i-1][1]*kernel_proportion_y)))]
+            #k_sizes and out_sizes are not lists of lists on the first iteration of the loop, so can't subindex
+            if(conv_layers_used == 1):
+                next_ksizes = [max(1., np.floor(out_sizes[0]*kernel_proportion_x)), 
+                    max(1., np.floor(out_sizes[1]*kernel_proportion_y))]
 
-            next_outsizes = [out_sizes[i-1][0]-next_ksizes[0]+1, out_sizes[i-1][1]-next_ksizes[1]+1, 
-                out_sizes[i-1][2]*featureset_expansion_per_convlayer]
+                next_outsizes = [out_sizes[0]-next_ksizes[0]+1, out_sizes[1]-next_ksizes[1]+1, 
+                    out_sizes[2]*featureset_expansion_per_convlayer]
 
-            if(next_outsizes[0:2] == [1,1]):
+            else:
+                next_ksizes = [max(1., np.floor(out_sizes[i-1][0]*kernel_proportion_x)), 
+                    max(1., np.floor(out_sizes[i-1][1]*kernel_proportion_y))]
+
+                next_outsizes = [out_sizes[i-1][0]-next_ksizes[0]+1, out_sizes[i-1][1]-next_ksizes[1]+1, 
+                    out_sizes[i-1][2]*featureset_expansion_per_convlayer]
+
+            #stop creating layers if either dim < 1, the overall image size == [1,1], or if the kernel == [1,1]
+            if(next_outsizes[0] < 1 or next_outsizes[1] < 1 or next_outsizes == [1,1] or next_ksizes == [1,1]):
                 break
             else:
                 conv_layers_used += 1
-                conv_next = nn.Conv2d(in_channels=out_sizes[i-1][2], out_channels=next_outsizes[2], 
-                    kernel_size=tuple(next_ksizes))
+                conv_next = nn.Conv2d(in_channels=int(out_sizes[i-1][2]), out_channels=int(next_outsizes[2]), 
+                    kernel_size=(int(next_ksizes[0]), int(next_ksizes[1])))
                 self.conv_layers.append(conv_next)
                 self.conv_layers.append(nn.ReLU())
                 k_sizes.append(next_ksizes)
                 out_sizes.append(next_outsizes)
+
 
         #Construct fully connected layers using the final output sizes of the network and going down
         #Using proportion of feature_reduction_proportion_fclayer to determine how many features each FC outputs
@@ -299,9 +312,10 @@ class _CONV(nn.Module):
 
         self.fc_layers = nn.ModuleList()
 
-        #If just one fc layer, then the final feature is a single layer
+        #If just one fc layer or if the feature reduction proportion implies only one layer needed, 
+        #then the final layer will reduce to the number of classes (rather than needing to upscale)
         #If more than one, need to scale out how the features are reduced across layers
-        if(num_fc_layers == 1):
+        if(num_fc_layers == 1 or fc_featurenums[0] <= num_classes):
             fc1 = nn.Linear(conv_out_features, num_classes)
             self.fc_layers.append(fc1)
         else:
@@ -326,7 +340,6 @@ class _CONV(nn.Module):
 
 
     def forward(self, x):
-
         for i, layer in enumerate(self.conv_layers):
             x = layer(x)
 

@@ -38,9 +38,9 @@ classifier_config_vision = {
         'weight_decay': [0, 1e-4, 1e-3, 1e-2],
         'num_conv_layers': [1, 2, 3],
         'num_fc_layers': [1, 2, 3],
-        'kernel_proportion_x': [0.05, 0.075, 0.1],
-        'kernel_proportion_y': [0.05, 0.075, 0.1],
-        'featureset_expansion_per_convlayer': [2, 3, 5],
+        'kernel_proportion_x': [0.05, 0.1, 0.25, 0.5],
+        'kernel_proportion_y': [0.05, 0.1, 0.25, 0.5],
+        'featureset_expansion_per_convlayer': [2, 3, 5, 10],
         'feature_reduction_proportion_fclayer': [10, 20, 50]
     },
 
