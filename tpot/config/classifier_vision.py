@@ -35,7 +35,13 @@ classifier_config_vision = {
         'learning_rate': [1e-3, 1e-2, 1e-1, 0.5, 1.],
         'batch_size': [4, 8, 16, 32],
         'num_epochs': [5, 10, 15],
-        'weight_decay': [0, 1e-4, 1e-3, 1e-2]
+        'weight_decay': [0, 1e-4, 1e-3, 1e-2],
+        'num_conv_layers': [1, 2, 3],
+        'num_fc_layers': [1, 2, 3],
+        'kernel_proportion_x': [0.05, 0.075, 0.1],
+        'kernel_proportion_y': [0.05, 0.075, 0.1],
+        'featureset_expansion_per_convlayer': [2, 3, 5],
+        'feature_reduction_proportion_fclayer': [10, 20, 50]
     },
 
     # Classifiers

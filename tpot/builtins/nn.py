@@ -236,22 +236,105 @@ class _MLP(nn.Module):
 
 class _CONV(nn.Module):
     # pylint: disable=arguments-differ
-    def __init__(self, input_size, num_classes):
+    def __init__(self, input_size, num_classes, num_conv_layers, num_fc_layers, 
+        kernel_proportion_x, kernel_proportion_y,
+        featureset_expansion_per_convlayer, feature_reduction_proportion_fclayer):
+
         super(_CONV, self).__init__()
 
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=3, kernel_size=2)
-        self.maxpool = nn.MaxPool2d(2)
-        self.conv2 = nn.Conv2d(in_channels=3, out_channels=6, kernel_size=2)
-        self.fc1 = nn.Linear(6*2*2, 10)
-        self.relu = nn.Tanh()
+        #Note that input size is a tuple: (N, C, H, W) with C being the number of channels
+        #Determine kernel sizes for each of the convolutional layers
+        #Forces the minimum size of a kernel to be 1 in either dimension
+        #Checking to ensure that the size of the output of each layer never becomes 1x1 or smaller
+        #Size calculated using [(W-K+2P)/S + 1], with P=0 and S=1 (no padding, stride=1)
+        #Out_size in format [H, W, C]
+        #All convolutional layers will have a ReLU following it
+        k_sizes = [max(1, np.floor(input_size[2]*kernel_proportion_x)), 
+            max(1, np.floor(input_size[3]*kernel_proportion_y))]
+        out_sizes = [input_size[2]-k_sizes[0]+1, input_size[3]-k_sizes[1]+1, 
+            input_size[1]*featureset_expansion_per_convlayer]
+
+        self.conv_layers = nn.ModuleList()
+        conv1 = nn.Conv2d(in_channels=input_size[1], out_channels=out_sizes[2], kernel_size=tuple(k_sizes))
+        self.conv_layers.append(conv1)
+        self.conv_layers.append(nn.ReLU())
+
+        conv_layers_used = 1
+
+        for i in range(1, num_conv_layers):
+            next_ksizes = [max(1, np.floor(out_sizes[i-1][0]*kernel_proportion_x)), 
+                max(1, np.floor(out_sizes[i-1][1]*kernel_proportion_y))]
+
+            next_outsizes = [out_sizes[i-1][0]-next_ksizes[0]+1, out_sizes[i-1][1]-next_ksizes[1]+1, 
+                out_sizes[i-1][2]*featureset_expansion_per_convlayer]
+
+            if(next_outsizes[0:2] == [1,1]):
+                break
+            else:
+                conv_layers_used += 1
+                conv_next = nn.Conv2d(in_channels=out_sizes[i-1][2], out_channels=next_outsizes[2], 
+                    kernel_size=tuple(next_ksizes))
+                self.conv_layers.append(conv_next)
+                self.conv_layers.append(nn.ReLU())
+                k_sizes.append(next_ksizes)
+                out_sizes.append(next_outsizes)
+
+        #Construct fully connected layers using the final output sizes of the network and going down
+        #Using proportion of feature_reduction_proportion_fclayer to determine how many features each FC outputs
+        #Final FC layer will need to be the number of classes
+
+        #Check if only one convolutional layer was used 
+        #(in which case out_sizes is just a single list, not a list of lists)
+        if(conv_layers_used == 1):
+            conv_out_features = int(np.prod(out_sizes))
+        else:
+            conv_out_features = int(np.prod(out_sizes[-1]))
+
+        #For use when flattening later
+        self.conv_out_features = conv_out_features
+
+        fc_featurenums = [int(np.ceil(conv_out_features*feature_reduction_proportion_fclayer))]
+        total_reduction = fc_featurenums[0] - num_classes
+
+        self.fc_layers = nn.ModuleList()
+
+        #If just one fc layer, then the final feature is a single layer
+        #If more than one, need to scale out how the features are reduced across layers
+        if(num_fc_layers == 1):
+            fc1 = nn.Linear(conv_out_features, num_classes)
+            self.fc_layers.append(fc1)
+        else:
+            fc1 = nn.Linear(conv_out_features, fc_featurenums[0])
+            self.fc_layers.append(fc1)
+            self.fc_layers.append(nn.ReLU())
+
+            for j in range(num_fc_layers-1):
+
+                next_featurenums = int(np.ceil(fc_featurenums[j]//feature_reduction_proportion_fclayer))
+
+                if(next_featurenums < num_classes):
+                    break
+                else:
+                    fcnext = nn.Linear(fc_featurenums[j], next_featurenums)
+                    self.fc_layers.append(fcnext)
+                    self.fc_layers.append(nn.ReLU())
+                    fc_featurenums.append(next_featurenums)
+
+            fc_final = nn.Linear(fc_featurenums[-1], num_classes)
+            self.fc_layers.append(fc_final)
+
 
     def forward(self, x):
-        x_conv1 = self.relu(self.conv1(x))
-        x_pool = self.maxpool(x_conv1)
-        x_conv2 = self.relu(self.conv2(x_pool))
-        x_view = x_conv2.view(-1, 6*2*2)
-        out = self.fc1(x_view)
-        return out
+
+        for i, layer in enumerate(self.conv_layers):
+            x = layer(x)
+
+        x = x.view(-1, self.conv_out_features)
+
+        for i, layer in enumerate(self.fc_layers):
+            x = layer(x)
+
+        return x
 
 class PytorchLRClassifier(PytorchClassifier):
     """Logistic Regression classifier, implemented in PyTorch, for use with
@@ -374,7 +457,12 @@ class PytorchConvClassifier(PytorchClassifier):
         learning_rate=0.01,
         weight_decay=0,
         verbose=False,
-        num_conv_layers=1
+        num_conv_layers=1,
+        num_fc_layers=1,
+        kernel_proportion_x=0.05,
+        kernel_proportion_y=0.05,
+        featureset_expansion_per_convlayer=3,
+        feature_reduction_proportion_fclayer=10
     ):
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -382,6 +470,11 @@ class PytorchConvClassifier(PytorchClassifier):
         self.weight_decay = weight_decay
         self.verbose = verbose
         self.num_conv_layers=num_conv_layers
+        self.num_fc_layers=num_fc_layers
+        self.kernel_proportion_x=kernel_proportion_x
+        self.kernel_proportion_y=kernel_proportion_y
+        self.featureset_expansion_per_convlayer=featureset_expansion_per_convlayer
+        self.feature_reduction_proportion_fclayer=feature_reduction_proportion_fclayer
 
         self.input_size = None
         self.num_classes = None
@@ -400,13 +493,15 @@ class PytorchConvClassifier(PytorchClassifier):
 
         X, y = self.validate_inputs(X, y)
 
-        self.input_size = X.shape
-        self.num_classes = len(set(y))
+        init_input_size = X.shape
 
         # Place X into the expected form if only 1 channel input but as a 3D array
         # (as expected size is 4D with [N, 1, H, W])
         if(X.ndim == 3):
-            X = X.reshape(self.input_size[0], -1, self.input_size[1], self.input_size[2])
+            X = X.reshape(init_input_size[0], -1, init_input_size[1], init_input_size[2])
+
+        self.input_size = X.shape
+        self.num_classes = len(set(y))
 
         X = torch.tensor(X, dtype=torch.float32)
         y = torch.tensor(y, dtype=torch.long)
@@ -414,7 +509,12 @@ class PytorchConvClassifier(PytorchClassifier):
         train_dset = TensorDataset(X, y)
 
         # Set parameters of the network
-        self.network = _CONV(self.input_size, self.num_classes).to(device)
+        self.network = _CONV(
+            self.input_size, self.num_classes, self.num_conv_layers, 
+            self.num_fc_layers, self.kernel_proportion_x, self.kernel_proportion_y, self.featureset_expansion_per_convlayer,
+            self.feature_reduction_proportion_fclayer
+        ).to(device)
+        
         self.loss_function = nn.CrossEntropyLoss()
         self.optimizer = Adam(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         self.data_loader = DataLoader(
