@@ -249,10 +249,11 @@ class _CONV(nn.Module):
         #Size calculated using [(W-K+2P)/S + 1], with P=0 and S=1 (no padding, stride=1)
         #Out_size in format [H, W, C]
         #All convolutional layers will have a ReLU following it
-        k_sizes = [max(1, np.floor(input_size[2]*kernel_proportion_x)), 
-            max(1, np.floor(input_size[3]*kernel_proportion_y))]
+        k_sizes = [max(1, int(np.floor(input_size[2]*kernel_proportion_x))), 
+            int(max(1, np.floor(input_size[3]*kernel_proportion_y)))]
         out_sizes = [input_size[2]-k_sizes[0]+1, input_size[3]-k_sizes[1]+1, 
             input_size[1]*featureset_expansion_per_convlayer]
+
 
         self.conv_layers = nn.ModuleList()
         conv1 = nn.Conv2d(in_channels=input_size[1], out_channels=out_sizes[2], kernel_size=tuple(k_sizes))
@@ -262,8 +263,8 @@ class _CONV(nn.Module):
         conv_layers_used = 1
 
         for i in range(1, num_conv_layers):
-            next_ksizes = [max(1, np.floor(out_sizes[i-1][0]*kernel_proportion_x)), 
-                max(1, np.floor(out_sizes[i-1][1]*kernel_proportion_y))]
+            next_ksizes = [max(1, int(np.floor(out_sizes[i-1][0]*kernel_proportion_x))), 
+                max(1, int(np.floor(out_sizes[i-1][1]*kernel_proportion_y)))]
 
             next_outsizes = [out_sizes[i-1][0]-next_ksizes[0]+1, out_sizes[i-1][1]-next_ksizes[1]+1, 
                 out_sizes[i-1][2]*featureset_expansion_per_convlayer]
@@ -293,7 +294,7 @@ class _CONV(nn.Module):
         #For use when flattening later
         self.conv_out_features = conv_out_features
 
-        fc_featurenums = [int(np.ceil(conv_out_features*feature_reduction_proportion_fclayer))]
+        fc_featurenums = [int(np.ceil(conv_out_features//feature_reduction_proportion_fclayer))]
         total_reduction = fc_featurenums[0] - num_classes
 
         self.fc_layers = nn.ModuleList()
@@ -542,14 +543,16 @@ class PytorchConvClassifier(PytorchClassifier):
         if(X.ndim == 3):
             X = X.reshape(X_size[0], -1, X_size[1], X_size[2])
 
+        X_size_4D = X.shape
+
         X = torch.tensor(X, dtype=torch.float32).to(self.device)
 
-        predictions = np.empty(X_size[0], dtype=int)
+        predictions = np.empty(X_size_4D[0], dtype=int)
 
         #Feed each image into the network (in the appropriate size for the network)
         #Then store only the most highly predicted class
         for i, image in enumerate(X):
-            image = Variable(image.view(1, -1, X_size[1], X_size[2]))
+            image = Variable(image.view(1, -1, X_size_4D[2], X_size_4D[3]))
             outputs = self.network(image)
 
             _, predicted = torch.max(outputs.data, 1)
