@@ -251,8 +251,8 @@ class _CONV(nn.Module):
         #All convolutional layers will have a ReLU following it
         #If a kernel is 1x1 then no need to continue convolutions
 
-        k_sizes = [max(1., np.floor(input_size[2]*kernel_proportion_x)), 
-            max(1., np.floor(input_size[3]*kernel_proportion_y))]
+        k_sizes = [max(1., np.ceil(input_size[2]*kernel_proportion_x)), 
+            max(1., np.ceil(input_size[3]*kernel_proportion_y))]
         out_sizes = [input_size[2]-k_sizes[0]+1, input_size[3]-k_sizes[1]+1, 
             input_size[1]*featureset_expansion_per_convlayer]
 
@@ -267,15 +267,15 @@ class _CONV(nn.Module):
         for i in range(1, num_conv_layers):
             #k_sizes and out_sizes are not lists of lists on the first iteration of the loop, so can't subindex
             if(conv_layers_used == 1):
-                next_ksizes = [max(1., np.floor(out_sizes[0]*kernel_proportion_x)), 
-                    max(1., np.floor(out_sizes[1]*kernel_proportion_y))]
+                next_ksizes = [max(1., np.ceil(out_sizes[0]*kernel_proportion_x)), 
+                    max(1., np.ceil(out_sizes[1]*kernel_proportion_y))]
 
                 next_outsizes = [out_sizes[0]-next_ksizes[0]+1, out_sizes[1]-next_ksizes[1]+1, 
                     out_sizes[2]*featureset_expansion_per_convlayer]
 
             else:
-                next_ksizes = [max(1., np.floor(out_sizes[i-1][0]*kernel_proportion_x)), 
-                    max(1., np.floor(out_sizes[i-1][1]*kernel_proportion_y))]
+                next_ksizes = [max(1., np.ceil(out_sizes[i-1][0]*kernel_proportion_x)), 
+                    max(1., np.ceil(out_sizes[i-1][1]*kernel_proportion_y))]
 
                 next_outsizes = [out_sizes[i-1][0]-next_ksizes[0]+1, out_sizes[i-1][1]-next_ksizes[1]+1, 
                     out_sizes[i-1][2]*featureset_expansion_per_convlayer]
@@ -285,12 +285,12 @@ class _CONV(nn.Module):
                 break
             else:
                 conv_layers_used += 1
+                k_sizes.append(next_ksizes)
+                out_sizes.append(next_outsizes)
                 conv_next = nn.Conv2d(in_channels=int(out_sizes[i-1][2]), out_channels=int(next_outsizes[2]), 
                     kernel_size=(int(next_ksizes[0]), int(next_ksizes[1])))
                 self.conv_layers.append(conv_next)
                 self.conv_layers.append(nn.ReLU())
-                k_sizes.append(next_ksizes)
-                out_sizes.append(next_outsizes)
 
 
         #Construct fully connected layers using the final output sizes of the network and going down
