@@ -251,10 +251,10 @@ class _CONV(nn.Module):
         #All convolutional layers will have a ReLU following it
         #If a kernel is 1x1 then no need to continue convolutions
 
-        k_sizes = [max(1., np.ceil(input_size[2]*kernel_proportion_x)), 
-            max(1., np.ceil(input_size[3]*kernel_proportion_y))]
-        out_sizes = [input_size[2]-k_sizes[0]+1, input_size[3]-k_sizes[1]+1, 
-            input_size[1]*featureset_expansion_per_convlayer]
+        k_sizes = np.array([max(1., np.ceil(input_size[2]*kernel_proportion_x)), 
+            max(1., np.ceil(input_size[3]*kernel_proportion_y))])
+        out_sizes = np.array([input_size[2]-k_sizes[0]+1, input_size[3]-k_sizes[1]+1, 
+            input_size[1]*featureset_expansion_per_convlayer])
 
         self.conv_layers = nn.ModuleList()
         conv1 = nn.Conv2d(in_channels=int(input_size[1]), out_channels=int(out_sizes[2]), 
@@ -267,30 +267,35 @@ class _CONV(nn.Module):
         for i in range(1, num_conv_layers):
             #k_sizes and out_sizes are not lists of lists on the first iteration of the loop, so can't subindex
             if(conv_layers_used == 1):
-                next_ksizes = [max(1., np.ceil(out_sizes[0]*kernel_proportion_x)), 
-                    max(1., np.ceil(out_sizes[1]*kernel_proportion_y))]
+                next_ksizes = np.array([max(1., np.ceil(out_sizes[0]*kernel_proportion_x)), 
+                    max(1., np.ceil(out_sizes[1]*kernel_proportion_y))])
 
-                next_outsizes = [out_sizes[0]-next_ksizes[0]+1, out_sizes[1]-next_ksizes[1]+1, 
-                    out_sizes[2]*featureset_expansion_per_convlayer]
+                next_outsizes = np.array([out_sizes[0]-next_ksizes[0]+1, out_sizes[1]-next_ksizes[1]+1, 
+                    out_sizes[2]*featureset_expansion_per_convlayer])
 
             else:
-                next_ksizes = [max(1., np.ceil(out_sizes[i-1][0]*kernel_proportion_x)), 
-                    max(1., np.ceil(out_sizes[i-1][1]*kernel_proportion_y))]
+                next_ksizes = np.array([max(1., np.ceil(out_sizes[i-1][0]*kernel_proportion_x)), 
+                    max(1., np.ceil(out_sizes[i-1][1]*kernel_proportion_y))])
 
-                next_outsizes = [out_sizes[i-1][0]-next_ksizes[0]+1, out_sizes[i-1][1]-next_ksizes[1]+1, 
-                    out_sizes[i-1][2]*featureset_expansion_per_convlayer]
+                next_outsizes = np.array([out_sizes[i-1][0]-next_ksizes[0]+1, out_sizes[i-1][1]-next_ksizes[1]+1, 
+                    out_sizes[i-1][2]*featureset_expansion_per_convlayer])
 
-            #stop creating layers if either dim < 1, the overall image size == [1,1], or if the kernel == [1,1]
-            if(next_outsizes[0] < 1 or next_outsizes[1] < 1 or next_outsizes == [1,1] or next_ksizes == [1,1]):
+            #stop creating layers if either dim < 1, or if the kernel == [1,1]
+            if(next_outsizes[0] < 1 or next_outsizes[1] < 1 or np.array_equal(next_ksizes, np.array([1,1]))):
                 break
             else:
                 conv_layers_used += 1
-                k_sizes.append(next_ksizes)
-                out_sizes.append(next_outsizes)
+                k_sizes = np.vstack((k_sizes, next_ksizes))
+                out_sizes = np.vstack((out_sizes, next_outsizes))
+                
                 conv_next = nn.Conv2d(in_channels=int(out_sizes[i-1][2]), out_channels=int(next_outsizes[2]), 
                     kernel_size=(int(next_ksizes[0]), int(next_ksizes[1])))
                 self.conv_layers.append(conv_next)
                 self.conv_layers.append(nn.ReLU())
+
+                #Cease adding layers if the current image output is 1,1 since there's nothing left to convolve
+                if(next_outsizes == [1,1]):
+                    break
 
 
         #Construct fully connected layers using the final output sizes of the network and going down
@@ -308,7 +313,6 @@ class _CONV(nn.Module):
         self.conv_out_features = conv_out_features
 
         fc_featurenums = [int(np.ceil(conv_out_features//feature_reduction_proportion_fclayer))]
-        total_reduction = fc_featurenums[0] - num_classes
 
         self.fc_layers = nn.ModuleList()
 
@@ -327,13 +331,14 @@ class _CONV(nn.Module):
 
                 next_featurenums = int(np.ceil(fc_featurenums[j]//feature_reduction_proportion_fclayer))
 
-                if(next_featurenums < num_classes):
+                if(next_featurenums <= num_classes):
                     break
                 else:
+                    fc_featurenums.append(next_featurenums)
+
                     fcnext = nn.Linear(fc_featurenums[j], next_featurenums)
                     self.fc_layers.append(fcnext)
                     self.fc_layers.append(nn.ReLU())
-                    fc_featurenums.append(next_featurenums)
 
             fc_final = nn.Linear(fc_featurenums[-1], num_classes)
             self.fc_layers.append(fc_final)
