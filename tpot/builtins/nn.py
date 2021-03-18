@@ -248,11 +248,13 @@ class _CONV(nn.Module):
         #Checking to ensure that the size of the output of each layer never becomes 1x1 or smaller
         #Size calculated using [(W-K+2P)/S + 1], with P=0 and S=1 (no padding, stride=1)
         #Out_size in format [H, W, C]
-        #All convolutional layers will have a ReLU following it
+        #All convolutional layers will have a ReLU following it to introduce nonlinearity
         #If a kernel is 1x1 then no need to continue convolutions
 
-        k_sizes = np.array([max(1., np.ceil(input_size[2]*kernel_proportion_x)), 
-            max(1., np.ceil(input_size[3]*kernel_proportion_y))])
+        #Min kernel is 2x2 unless the original input size is 1 in either dimension, if so that dim is forced to 1
+
+        k_sizes = np.array([min(input_size[2], max(2., np.ceil(input_size[2]*kernel_proportion_x))), 
+            min(input_size[3], max(2., np.ceil(input_size[3]*kernel_proportion_y)))])
         out_sizes = np.array([input_size[2]-k_sizes[0]+1, input_size[3]-k_sizes[1]+1, 
             input_size[1]*featureset_expansion_per_convlayer])
 
@@ -266,21 +268,23 @@ class _CONV(nn.Module):
 
         for i in range(1, num_conv_layers):
             #k_sizes and out_sizes are not lists of lists on the first iteration of the loop, so can't subindex
+            
+            #Min kernel is 2x2 unless the original input size is 1 in either dimension, if so that dim is forced to 1
             if(conv_layers_used == 1):
-                next_ksizes = np.array([max(1., np.ceil(out_sizes[0]*kernel_proportion_x)), 
-                    max(1., np.ceil(out_sizes[1]*kernel_proportion_y))])
+                next_ksizes = np.array([min(input_size[2], max(2., np.ceil(out_sizes[0]*kernel_proportion_x))), 
+                    min(input_size[2], max(2., np.ceil(out_sizes[1]*kernel_proportion_y)))])
 
                 next_outsizes = np.array([out_sizes[0]-next_ksizes[0]+1, out_sizes[1]-next_ksizes[1]+1, 
                     out_sizes[2]*featureset_expansion_per_convlayer])
 
             else:
-                next_ksizes = np.array([max(1., np.ceil(out_sizes[i-1][0]*kernel_proportion_x)), 
-                    max(1., np.ceil(out_sizes[i-1][1]*kernel_proportion_y))])
+                next_ksizes = np.array([min(input_size[2], max(2., np.ceil(out_sizes[i-1][0]*kernel_proportion_x))), 
+                    min(input_size[2], max(2., np.ceil(out_sizes[i-1][1]*kernel_proportion_y)))])
 
                 next_outsizes = np.array([out_sizes[i-1][0]-next_ksizes[0]+1, out_sizes[i-1][1]-next_ksizes[1]+1, 
                     out_sizes[i-1][2]*featureset_expansion_per_convlayer])
 
-            #stop creating layers if either dim < 1, or if the kernel == [1,1]
+            #stop creating layers if either output dim would be < 1, or if the kernel == [1,1]
             if(next_outsizes[0] < 1 or next_outsizes[1] < 1 or np.array_equal(next_ksizes, np.array([1,1]))):
                 break
             else:
