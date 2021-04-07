@@ -36,10 +36,24 @@ classifier_config_vision = {
         'weight_decay': [0, 1e-4, 1e-3, 1e-2],
         'num_conv_layers': [1, 2, 3],
         'num_fc_layers': [1, 2, 3],
-        'kernel_proportion_x': [0.05, 0.1, 0.25, 0.5],
-        'kernel_proportion_y': [0.05, 0.1, 0.25, 0.5],
+        'kernel_proportion_x': [0.25, 0.5],
+        'kernel_proportion_y': [0.25, 0.5],
         'featureset_expansion_per_convlayer': [2, 3, 5],
-        'feature_reduction_proportion_fclayer': [3, 5, 10]
+        'feature_reduction_proportion_fclayer': [3, 5, 10],
+        'optimizer_name': ['Adam'],
+        'activation_func_name': ['ReLU']
+    },
+
+    'tpot.builtins.PytorchLSTMClassifier': {
+        'learning_rate': [1e-3, 1e-2, 1e-1, 0.5, 1.],
+        'batch_size': [4, 8, 16, 32],
+        'num_epochs': [5, 10, 15],
+        'weight_decay': [0, 1e-4, 1e-3, 1e-2],
+        'hidden_size': [1, 2, 3],
+        'lstm_layers': [1, 2, 3],
+        'optimizer_name': ['Adam'],
+        'bidirectionality': [True, False],
+        'dropout_perc': [0, 0.05]
     },
 
 }
