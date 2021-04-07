@@ -411,12 +411,14 @@ class _LSTM(nn.Module):
     def forward(self, x):
         num_directions = 2 if self.bidirectionality else 1
 
-        #init hidden (need to test and see if these actually work or if the sizes need to be adjusted)
+        #init hidden
         h_0, c_0 = self.init_hidden(x, num_directions)
-
-        lstm_output, (ht, ct) = self.lstm_layer(x, (h_0, c_0))
-
-        out = self.fc(ht[:, -1])
+        #Feed sequences through the LSTM layer
+        lstm_output, (h_f, c_f) = self.lstm_layer(x, (h_0, c_0))
+        #Reshape the final hidden output to a shape [batch_size, hidden_size * num_layers * num_directions]
+        h_f = h_f.view(-1, self.hidden_size * self.num_layers * num_directions)
+        #Output final connected layer (returns shape: [batch_size, num_classes])
+        out = self.fc(h_f)
 
         return out
 
