@@ -67,6 +67,32 @@ def _get_cuda_device_if_available():
     else:
         return torch.device('cpu')
 
+def _create_optimizer(optimizer_name, **kwargs):
+    #Only supports optimizers in PyTorch that accept the arguments passed in (lr/learning rate, weight_decay)
+
+    try:
+        optim_func = getattr(torch.optim, optimizer_name)
+    except AttributeError:
+        raise NotImplementedError("{} is not a valid PyTorch optimizer".format(optimizer_name))
+
+    optim_def = optim_func(**kwargs)
+
+    return optim_def
+
+
+def _create_activation_func(activation_func_name):
+    #Only supports activation functions in PyTorch that do not require arguments (ReLU, Tanh, etc.)
+    #Optimizing activation function parameters would explode tree complexity too much
+    #All optimizers can be found in Pytorch's nn documentation
+
+    try:
+        activ_func = getattr(nn, activation_func_name)
+    except AttributeError:
+        raise NotImplementedError("{} is not a valid PyTorch NN activation function".format(activation_func_name))
+
+    return activ_func()
+
+
 class PytorchEstimator(BaseEstimator):
     """Base class for Pytorch-based estimators (currently only classifiers) for
     use in TPOT.
@@ -238,9 +264,13 @@ class _CONV(nn.Module):
     # pylint: disable=arguments-differ
     def __init__(self, input_size, num_classes, num_conv_layers, num_fc_layers, 
         kernel_proportion_x, kernel_proportion_y,
-        featureset_expansion_per_convlayer, feature_reduction_proportion_fclayer):
+        featureset_expansion_per_convlayer, feature_reduction_proportion_fclayer,
+        activation_func_name):
 
         super(_CONV, self).__init__()
+
+        #Determine activation function by names given
+        activ_func = _create_activation_func(activation_func_name)
 
         #Note that input size is a tuple: (N, C, H, W) with C being the number of channels
         #Determine kernel sizes for each of the convolutional layers
@@ -248,7 +278,7 @@ class _CONV(nn.Module):
         #Checking to ensure that the size of the output of each layer never becomes 1x1 or smaller
         #Size calculated using [(W-K+2P)/S + 1], with P=0 and S=1 (no padding, stride=1)
         #Out_size in format [H, W, C]
-        #All convolutional layers will have a ReLU following it to introduce nonlinearity
+        #All convolutional layers will have the activation function following it to introduce nonlinearity
         #If a kernel is 1x1 then no need to continue convolutions
 
         #Min kernel is 2x2 unless the original input size is 1 in either dimension, if so that dim is forced to 1
@@ -262,7 +292,7 @@ class _CONV(nn.Module):
         conv1 = nn.Conv2d(in_channels=int(input_size[1]), out_channels=int(out_sizes[2]), 
             kernel_size=(int(k_sizes[0]), int(k_sizes[1])))
         self.conv_layers.append(conv1)
-        self.conv_layers.append(nn.ReLU())
+        self.conv_layers.append(activ_func)
 
         conv_layers_used = 1
 
@@ -295,7 +325,7 @@ class _CONV(nn.Module):
                 conv_next = nn.Conv2d(in_channels=int(out_sizes[i-1][2]), out_channels=int(next_outsizes[2]), 
                     kernel_size=(int(next_ksizes[0]), int(next_ksizes[1])))
                 self.conv_layers.append(conv_next)
-                self.conv_layers.append(nn.ReLU())
+                self.conv_layers.append(activ_func)
 
                 #Cease adding layers if the current image output is 1,1 since there's nothing left to convolve
                 if(next_outsizes == [1,1]):
@@ -329,7 +359,7 @@ class _CONV(nn.Module):
         else:
             fc1 = nn.Linear(conv_out_features, fc_featurenums[0])
             self.fc_layers.append(fc1)
-            self.fc_layers.append(nn.ReLU())
+            self.fc_layers.append(activ_func)
 
             for j in range(num_fc_layers-1):
 
@@ -342,7 +372,7 @@ class _CONV(nn.Module):
 
                     fcnext = nn.Linear(fc_featurenums[j], next_featurenums)
                     self.fc_layers.append(fcnext)
-                    self.fc_layers.append(nn.ReLU())
+                    self.fc_layers.append(activ_func)
 
             fc_final = nn.Linear(fc_featurenums[-1], num_classes)
             self.fc_layers.append(fc_final)
@@ -358,6 +388,47 @@ class _CONV(nn.Module):
             x = layer(x)
 
         return x
+
+
+class _LSTM(nn.Module):
+    # pylint: disable=arguments-differ
+    def __init__(self, in_features, num_classes, hidden_size, num_layers, bidirectionality, dropout_prop):
+        super(_LSTM, self).__init__()
+
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.bidirectionality = bidirectionality
+
+        #LSTM definition (batch first for consistency with all other types of layers)
+        self.lstm_layer = nn.LSTM(in_features, hidden_size, num_layers=num_layers, dropout=dropout_prop, batch_first=True, bidirectional=bidirectionality)
+
+        #Final fully connected to output to number of classes (multiply by two if bidirectional)
+        if(bidirectionality):
+            self.fc = nn.Linear(hidden_size*2, num_classes)
+        else:
+            self.fc = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        num_directions = 2 if self.bidirectionality else 1
+
+        #init hidden (need to test and see if these actually work or if the sizes need to be adjusted)
+        h_0, c_0 = self.init_hidden(x, num_directions)
+
+        lstm_output, (ht, ct) = self.lstm_layer(x, (h_0, c_0))
+
+        out = self.fc(ht[:, -1])
+
+        return out
+
+    def init_hidden(self, x, num_directions):
+        batch_size = x.shape[0]
+
+        h_0 = torch.zeros(self.num_layers * num_directions, batch_size, self.hidden_size)
+        c_0 = torch.zeros(self.num_layers * num_directions, batch_size, self.hidden_size)
+
+        return [n for n in (h_0, c_0)]
+
+
 
 class PytorchLRClassifier(PytorchClassifier):
     """Logistic Regression classifier, implemented in PyTorch, for use with
@@ -485,7 +556,9 @@ class PytorchConvClassifier(PytorchClassifier):
         kernel_proportion_x=0.05,
         kernel_proportion_y=0.05,
         featureset_expansion_per_convlayer=3,
-        feature_reduction_proportion_fclayer=10
+        feature_reduction_proportion_fclayer=10,
+        optimizer_name="Adam",
+        activation_func_name="ReLU"
     ):
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -498,6 +571,8 @@ class PytorchConvClassifier(PytorchClassifier):
         self.kernel_proportion_y=kernel_proportion_y
         self.featureset_expansion_per_convlayer=featureset_expansion_per_convlayer
         self.feature_reduction_proportion_fclayer=feature_reduction_proportion_fclayer
+        self.optimizer_name=optimizer_name
+        self.activation_func_name=activation_func_name
 
         self.input_size = None
         self.num_classes = None
@@ -535,11 +610,12 @@ class PytorchConvClassifier(PytorchClassifier):
         self.network = _CONV(
             self.input_size, self.num_classes, self.num_conv_layers, 
             self.num_fc_layers, self.kernel_proportion_x, self.kernel_proportion_y, self.featureset_expansion_per_convlayer,
-            self.feature_reduction_proportion_fclayer
+            self.feature_reduction_proportion_fclayer, self.activation_func_name
         ).to(device)
         
         self.loss_function = nn.CrossEntropyLoss()
-        self.optimizer = Adam(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        #self.optimizer = Adam(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        self.optimizer = _create_optimizer(self.optimizer_name, params=self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         self.data_loader = DataLoader(
             train_dset, batch_size=self.batch_size, shuffle=True, num_workers=2
         )
@@ -548,7 +624,6 @@ class PytorchConvClassifier(PytorchClassifier):
 
     def _more_tags(self):
         return {'non_deterministic': True, 'binary_only': True}
-
 
     def predict(self, X):
         """Special predict method for convolutional implementations
@@ -582,3 +657,102 @@ class PytorchConvClassifier(PytorchClassifier):
         return predictions.reshape(-1, 1)
 
 
+
+class PytorchLSTMClassifier(PytorchClassifier):
+    """LSTM (an RNN) classifier, implemented in PyTorch, for use with TPOT.
+    """
+
+    def __init__(
+        self,
+        num_epochs=10,
+        batch_size=8,
+        learning_rate=0.01,
+        weight_decay=0,
+        verbose=False,
+        hidden_size=1,
+        lstm_layers=1,
+        optimizer_name="Adam",
+        bidirectionality=False,
+        dropout_prop=0
+    ):
+        self.num_epochs = num_epochs
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+        self.verbose = verbose
+        self.hidden_size=hidden_size
+        self.lstm_layers=lstm_layers
+        self.optimizer_name=optimizer_name
+        self.bidirectionality=bidirectionality
+        self.dropout_prop=dropout_prop
+
+        self.input_size = None
+        self.num_classes = None
+        self.network = None
+        self.loss_function = None
+        self.optimizer = None
+        self.data_loader = None
+        self.train_dset_len = None
+        self.device = None
+
+        #Unique classifier that allows for N-D inputs (assumed to be images)
+        self.allow_nd = True
+
+    def _init_model(self, X, y):
+        device = _get_cuda_device_if_available()
+
+        X, y = self.validate_inputs(X, y)
+
+        #Expected shape to be 3D in the format (batch size, sequence length, features)
+        self.input_size = X.shape
+        self.input_features = self.input_size[-1]
+        self.num_classes = len(set(y))
+
+        X = torch.tensor(X, dtype=torch.float32)
+        y = torch.tensor(y, dtype=torch.long)
+
+        train_dset = TensorDataset(X, y)
+
+        # Set parameters of the network
+        self.network = _LSTM(
+            self.input_features, self.num_classes, self.hidden_size, 
+            self.lstm_layers, self.bidirectionality, self.dropout_prop
+        ).to(device)
+        
+        self.loss_function = nn.CrossEntropyLoss()
+        #self.optimizer = Adam(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        self.optimizer = _create_optimizer(self.optimizer_name, params=self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        self.data_loader = DataLoader(
+            train_dset, batch_size=self.batch_size, shuffle=True, num_workers=2
+        )
+        self.train_dset_len = len(train_dset)
+        self.device = device
+
+    def _more_tags(self):
+        return {'non_deterministic': True, 'binary_only': True}
+
+    def predict(self, X):
+        """Special predict method for convolutional implementations
+        Will make super class handle this properly in the future
+        """
+
+        if hasattr(self, "allow_nd"):
+            X = check_array(X, accept_sparse=True, allow_nd=self.allow_nd)
+        else:
+            X = check_array(X, accept_sparse=True, allow_nd=False)
+
+        X_size = X.shape
+
+        X = torch.tensor(X, dtype=torch.float32).to(self.device)
+
+        predictions = np.empty(X_size[0], dtype=int)
+
+        #Feed each sequence into the network (in the appropriate size for the network)
+        #Then store only the most highly predicted class
+        for i, seq in enumerate(X):
+            seq = Variable(seq.view(1, X_size[1], X_size[2]))
+            outputs = self.network(seq)
+
+            _, predicted = torch.max(outputs.data, 1)
+            predictions[i] = int(predicted)
+        return predictions.reshape(-1, 1)
