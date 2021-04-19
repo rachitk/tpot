@@ -25,7 +25,7 @@ License along with TPOT. If not, see <http://www.gnu.org/licenses/>.
 
 import numpy as np
 
-# This configuration only has the Convolutional Classifier. 
+# This configuration only has full-network NN classifiers. 
 
 classifier_config_vision = {
 
@@ -40,8 +40,8 @@ classifier_config_vision = {
         'kernel_proportion_y': [0.25, 0.5],
         'featureset_expansion_per_convlayer': [2, 3, 5],
         'feature_reduction_proportion_fclayer': [3, 5, 10],
-        'optimizer_name': ['Adam'],
-        'activation_func_name': ['ReLU']
+        'optimizer_name': ['Adam', 'SGD', 'RMSprop'],
+        'activation_func_name': ['ReLU', 'Tanh', 'Sigmoid']
     },
 
     'tpot.builtins.PytorchLSTMClassifier': {
@@ -51,7 +51,7 @@ classifier_config_vision = {
         'weight_decay': [0, 1e-4, 1e-3, 1e-2],
         'hidden_size': [1, 2, 3],
         'lstm_layers': [1, 2, 3],
-        'optimizer_name': ['Adam'],
+        'optimizer_name': ['Adam', 'SGD', 'RMSprop'],
         'bidirectionality': [True, False],
         'dropout_perc': [0, 0.05]
     },
