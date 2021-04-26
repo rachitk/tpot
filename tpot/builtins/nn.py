@@ -728,8 +728,8 @@ class PytorchLSTMClassifier(PytorchClassifier):
         self.input_size = X.shape
 
         if(len(self.input_size) == 2):
-            self.vocab_size = np.max(X)
-            #maybe find a way to make this modifiable? Another network entirely that allows user to predecide if encodings needed?
+            self.vocab_size = np.max(X)+1
+            #maybe find a way to make features modifiable? Another network entirely that allows user to predecide if encodings needed?
             self.input_features = 10 
             self.need_embeddings = True
         elif(len(self.input_size) == 3):
@@ -738,7 +738,8 @@ class PytorchLSTMClassifier(PytorchClassifier):
 
         self.num_classes = len(set(y))
 
-        X = torch.tensor(X, dtype=torch.float32)
+        #Needs long for X (for embeddings layer)
+        X = torch.tensor(X, dtype=torch.long)
         y = torch.tensor(y, dtype=torch.long)
 
         train_dset = TensorDataset(X, y)
@@ -773,16 +774,32 @@ class PytorchLSTMClassifier(PytorchClassifier):
 
         X_size = X.shape
 
-        X = torch.tensor(X, dtype=torch.float32).to(self.device)
+        X = torch.tensor(X, dtype=torch.long).to(self.device)
 
         predictions = np.empty(X_size[0], dtype=int)
 
+        #Check what the input dimension is and feed in appropriately
         #Feed each sequence into the network (in the appropriate size for the network)
         #Then store only the most highly predicted class
-        for i, seq in enumerate(X):
-            seq = Variable(seq.view(1, X_size[1], X_size[2]))
-            outputs = self.network(seq)
+        
+        #TODO: Upon inspection, this is EXTREMELY inefficient compared to just passing in the entire input and then calculating maximum along a dimension
+        #This issue exists for all of the other NN implementations
+        #Fixing this could easily reduce overall evaluation time a bit, though minimally compared to the training time most likely
+        if(self.need_embeddings):
+            for i, seq in enumerate(X):
+                seq = Variable(seq.view(1, X_size[1]))
+                outputs = self.network(seq)
 
-            _, predicted = torch.max(outputs.data, 1)
-            predictions[i] = int(predicted)
-        return predictions.reshape(-1, 1)
+                _, predicted = torch.max(outputs.data, 1)
+                predictions[i] = int(predicted)
+            return predictions.reshape(-1, 1)
+        else:
+            for i, seq in enumerate(X):
+                seq = Variable(seq.view(1, X_size[1], X_size[2]))
+                outputs = self.network(seq)
+
+                _, predicted = torch.max(outputs.data, 1)
+                predictions[i] = int(predicted)
+            return predictions.reshape(-1, 1)
+
+
