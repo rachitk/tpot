@@ -414,9 +414,9 @@ class _LSTM(nn.Module):
 
         #Final fully connected to output to number of classes (multiply by two if bidirectional)
         if(bidirectionality):
-            self.fc = nn.Linear(hidden_size*2, num_classes)
+            self.fc = nn.Linear(hidden_size*2*num_layers, num_classes)
         else:
-            self.fc = nn.Linear(hidden_size, num_classes)
+            self.fc = nn.Linear(hidden_size*num_layers, num_classes)
 
     def forward(self, x):
         num_directions = 2 if self.bidirectionality else 1
