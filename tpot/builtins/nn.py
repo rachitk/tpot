@@ -392,12 +392,22 @@ class _CONV(nn.Module):
 
 class _LSTM(nn.Module):
     # pylint: disable=arguments-differ
-    def __init__(self, in_features, num_classes, hidden_size, num_layers, bidirectionality, dropout_prop):
+    def __init__(self, in_features, num_classes, hidden_size, num_layers, bidirectionality, dropout_prop, need_embeddings, vocab_size):
         super(_LSTM, self).__init__()
 
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.bidirectionality = bidirectionality
+        self.need_embeddings = need_embeddings
+
+        #Embedding layer (need to make vocab size here - 10000 - not a magic number - ask Joe)
+        #The "1" is probably actually going to need to be how many elements represent each word
+        #Need to pull the "1" from the original vector being passed in (find length of the array within the array)
+        #Using sparse=True because likely to be sparse array
+
+        #Expects that any padding will have been done with index 0
+        if(need_embeddings):
+            self.embedding_layer = nn.Embedding(vocab_size, in_features, sparse=True, padding_idx=0)
 
         #LSTM definition (batch first for consistency with all other types of layers)
         self.lstm_layer = nn.LSTM(in_features, hidden_size, num_layers=num_layers, dropout=dropout_prop, batch_first=True, bidirectional=bidirectionality)
@@ -410,6 +420,10 @@ class _LSTM(nn.Module):
 
     def forward(self, x):
         num_directions = 2 if self.bidirectionality else 1
+
+        #Create embeddings if needed
+        if(self.need_embeddings):
+            x = self.embedding_layer(x)
 
         #init hidden
         h_0, c_0 = self.init_hidden(x, num_directions)
@@ -697,6 +711,9 @@ class PytorchLSTMClassifier(PytorchClassifier):
         self.train_dset_len = None
         self.device = None
 
+        self.vocab_size = None
+        self.need_embeddings = None
+
         #Unique classifier that allows for N-D inputs (assumed to be images)
         self.allow_nd = True
 
@@ -705,9 +722,20 @@ class PytorchLSTMClassifier(PytorchClassifier):
 
         X, y = self.validate_inputs(X, y)
 
-        #Expected shape to be 3D in the format (batch size, sequence length, features)
+        #Expected shape to be 3D in the format (batch size, sequence length, features) if pre-encoded or standard sequence data
+        #If passed in as only 2D with the encoded word indexes for each sequence, will need an embedding layer
+        #and so will define input features as the embedding_dim (10) and the vocab_size as the max of the input data
         self.input_size = X.shape
-        self.input_features = self.input_size[-1]
+
+        if(len(self.input_size) == 2):
+            self.vocab_size = np.max(X)
+            #maybe find a way to make this modifiable? Another network entirely that allows user to predecide if encodings needed?
+            self.input_features = 10 
+            self.need_embeddings = True
+        elif(len(self.input_size) == 3):
+            self.input_features = self.input_size[-1]
+            self.need_embeddings = False
+
         self.num_classes = len(set(y))
 
         X = torch.tensor(X, dtype=torch.float32)
@@ -718,7 +746,8 @@ class PytorchLSTMClassifier(PytorchClassifier):
         # Set parameters of the network
         self.network = _LSTM(
             self.input_features, self.num_classes, self.hidden_size, 
-            self.lstm_layers, self.bidirectionality, self.dropout_prop
+            self.lstm_layers, self.bidirectionality, self.dropout_prop,
+            self.need_embeddings, self.vocab_size
         ).to(device)
         
         self.loss_function = nn.CrossEntropyLoss()
@@ -734,8 +763,7 @@ class PytorchLSTMClassifier(PytorchClassifier):
         return {'non_deterministic': True, 'binary_only': True}
 
     def predict(self, X):
-        """Special predict method for convolutional implementations
-        Will make super class handle this properly in the future
+        """Special predict method for LSTM implementations
         """
 
         if hasattr(self, "allow_nd"):
