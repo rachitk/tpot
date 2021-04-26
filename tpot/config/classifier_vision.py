@@ -53,7 +53,7 @@ classifier_config_vision = {
         'lstm_layers': [1, 2, 3],
         'optimizer_name': ['Adam', 'SGD', 'RMSprop'],
         'bidirectionality': [True, False],
-        'dropout_perc': [0, 0.05]
+        'dropout_prop': [0, 0.05]
     },
 
 }
