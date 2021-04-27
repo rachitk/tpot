@@ -662,15 +662,12 @@ class PytorchConvClassifier(PytorchClassifier):
 
         predictions = np.empty(X_size_4D[0], dtype=int)
 
-        #Feed each image into the network (in the appropriate size for the network)
-        #Then store only the most highly predicted class
-        for i, image in enumerate(X):
-            image = Variable(image.view(1, -1, X_size_4D[2], X_size_4D[3]))
-            outputs = self.network(image)
-
-            _, predicted = torch.max(outputs.data, 1)
-            predictions[i] = int(predicted)
-        return predictions.reshape(-1, 1)
+        #Feed images into the network (in the appropriate size for the network)
+        #Then store only the most highly predicted class for each
+        outputs = self.network(X)
+        _, predicted = torch.max(outputs.data, 1)
+        predictions = predicted.tolist()
+        return np.reshape(predictions, (-1, 1))
 
 
 
@@ -781,25 +778,17 @@ class PytorchLSTMClassifier(PytorchClassifier):
         #Check what the input dimension is and feed in appropriately
         #Feed each sequence into the network (in the appropriate size for the network)
         #Then store only the most highly predicted class
-        
-        #TODO: Upon inspection, this is EXTREMELY inefficient compared to just passing in the entire input and then calculating maximum along a dimension
-        #This issue exists for all of the other NN implementations
-        #Fixing this could easily reduce overall evaluation time a bit, though minimally compared to the training time most likely
         if(self.need_embeddings):
-            for i, seq in enumerate(X):
-                seq = Variable(seq.view(1, X_size[1]))
-                outputs = self.network(seq)
+            outputs = self.network(X)
+            _, predicted = torch.max(outputs.data, 1)
+            predictions = predicted.tolist()
+            return np.reshape(predictions, (-1, 1))
 
-                _, predicted = torch.max(outputs.data, 1)
-                predictions[i] = int(predicted)
-            return predictions.reshape(-1, 1)
         else:
-            for i, seq in enumerate(X):
-                seq = Variable(seq.view(1, X_size[1], X_size[2]))
-                outputs = self.network(seq)
+            outputs = self.network(X)
+            _, predicted = torch.max(outputs.data, 1)
+            predictions = predicted.tolist()
+            return np.reshape(predictions, (-1, 1))
 
-                _, predicted = torch.max(outputs.data, 1)
-                predictions[i] = int(predicted)
-            return predictions.reshape(-1, 1)
 
 
