@@ -51,7 +51,7 @@ classifier_config_vision = {
         'weight_decay': [0, 1e-4, 1e-3, 1e-2],
         'hidden_size': [1, 2, 3],
         'lstm_layers': [1, 2, 3],
-        'optimizer_name': ['Adam', 'SGD', 'RMSprop', 'SparseAdam'],
+        'optimizer_name': ['Adam', 'SGD', 'RMSprop'],
         'bidirectionality': [True, False],
         'dropout_prop': [0, 0.05]
     },

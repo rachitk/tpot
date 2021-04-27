@@ -407,7 +407,7 @@ class _LSTM(nn.Module):
 
         #Expects that any padding will have been done with index 0
         if(need_embeddings):
-            self.embedding_layer = nn.Embedding(vocab_size, in_features, sparse=True, padding_idx=0)
+            self.embedding_layer = nn.Embedding(vocab_size, in_features, padding_idx=0)
 
         #LSTM definition (batch first for consistency with all other types of layers)
         self.lstm_layer = nn.LSTM(in_features, hidden_size, num_layers=num_layers, dropout=dropout_prop, batch_first=True, bidirectional=bidirectionality)
