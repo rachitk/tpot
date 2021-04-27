@@ -779,6 +779,11 @@ class PytorchLSTMClassifier(PytorchClassifier):
         #Feed each sequence into the network (in the appropriate size for the network)
         #Then store only the most highly predicted class
         if(self.need_embeddings):
+            #Replace all indices that didn't appear in the original training set with 1s (unknowns)
+            max_vocab_size = self.vocab_size-1
+            X[X>max_vocab_size] = 1
+            #X = torch.where(X>max_vocab_size, 1, X)  #Same as above, but less efficient (apparently?)
+
             outputs = self.network(X)
             _, predicted = torch.max(outputs.data, 1)
             predictions = predicted.tolist()
