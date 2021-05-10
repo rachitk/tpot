@@ -34,8 +34,8 @@ classifier_config_vision = {
         'batch_size': [4, 8, 16, 32],
         'num_epochs': [5, 10, 15],
         'weight_decay': [0, 1e-4, 1e-3, 1e-2],
-        'num_conv_layers': [1, 2, 3],
-        'num_fc_layers': [1, 2, 3],
+        'num_conv_layers': [1, 2, 3, 5, 10],
+        'num_fc_layers': [1, 2, 3, 5, 10],
         'kernel_proportion_x': [0.25, 0.5],
         'kernel_proportion_y': [0.25, 0.5],
         'featureset_expansion_per_convlayer': [2, 3, 5],
@@ -49,11 +49,11 @@ classifier_config_vision = {
         'batch_size': [4, 8, 16, 32],
         'num_epochs': [5, 10, 15],
         'weight_decay': [0, 1e-4, 1e-3, 1e-2],
-        'hidden_size': [1, 2, 3],
-        'lstm_layers': [1, 2, 3],
+        'hidden_size': [1, 2, 3, 5, 10],
+        'lstm_layers': [1, 2, 3, 5, 10],
         'optimizer_name': ['Adam', 'SGD', 'RMSprop'],
         'bidirectionality': [True, False],
-        'dropout_prop': [0, 0.05]
+        'dropout_prop': [0, 0.1, 0.2, 0.4]
     },
 
 }
