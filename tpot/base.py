@@ -79,6 +79,7 @@ from .config.classifier_nn import classifier_config_nn
 from .config.classifier_cuml import classifier_config_cuml
 from .config.regressor_cuml import regressor_config_cuml
 from .config.classifier_vision import classifier_config_vision
+from .config.classifier_sequence import classifier_config_sequence
 
 from .metrics import SCORERS
 from .gp_types import Output_Array
@@ -396,6 +397,8 @@ class TPOTBase(BaseEstimator):
                     self._config_dict = regressor_config_cuml
             elif config_dict == "TPOT vision":
                 self._config_dict = classifier_config_vision
+            elif config_dict == "TPOT sequence":
+                self._config_dict = classifier_config_sequence
             else:
                 config = self._read_config_file(config_dict)
                 if hasattr(config, "tpot_config"):
