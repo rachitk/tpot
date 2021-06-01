@@ -39,6 +39,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_X_y, assert_all_finite, check_array, check_is_fitted
 from sklearn.utils.multiclass import type_of_target
 
+#Needed for torch
 try:
     import torch
     from torch import nn
@@ -47,6 +48,14 @@ try:
     from torch.utils.data import TensorDataset, DataLoader
 except ModuleNotFoundError:
     raise
+
+#Attempt to import torchvision for the prebuilt networks, but also just pass if not found
+#Error handling for torchvision import failure is done in the Pytorch prebuilt CONV classifier.
+try:
+    import torchvision
+    from torchvision import models, transforms
+except:
+    pass
 
 def _pytorch_model_is_fully_initialized(clf: BaseEstimator):
     if all([
@@ -390,6 +399,88 @@ class _CONV(nn.Module):
         return x
 
 
+
+class _pytorchPrebuiltCONV(nn.Module):
+    # pylint: disable=arguments-differ
+    def __init__(self, num_classes, pretrained_val, network_name):
+
+        super(_pytorchPrebuiltCONV, self).__init__()
+
+        network_name = network_name.lower()
+
+        #Note that input size is: (N, 3, 224, 224) to match every prebuilt network.
+
+        #Every network that is supported will be grabbed from the Pytorch model zoo (trained on imagenet). 
+        #Need to change final layer to output the correct number of classes for the paradigm.
+        #Changing the final layer will have to be different for every single network because they aren't constructed the same way.
+        #As such, support for other networks will need to be manually added. This can't be automated like the Optimizer or Activation Function dynamic assignments.
+
+        #Currently accepts any of the following as input for network name:  
+        #[resnet, alexnet, vgg, squeezenet, densenet, googlenet, shufflenet, mobilenet, resnext, wide_resnet, mnasnet]
+        #(Not including inception because it has a different input size of 299x299 instead)
+
+
+        if(network_name == 'resnet'):
+            model = models.resnet18(pretrained=pretrained_val)
+            model.fc = nn.Linear(512, num_classes)
+
+        elif(network_name == 'alexnet'):
+            model = models.alexnet(pretrained=pretrained_val)
+            model.classifier[6] = nn.Linear(4096, num_classes)
+
+        elif(network_name == 'vgg'):
+            model = models.vgg16(pretrained=pretrained_val)
+            model.classifier[6] = nn.Linear(4096, num_classes)
+
+        elif(network_name == 'squeezenet'):
+            model = models.squeezenet1_0(pretrained=pretrained_val)
+            model.classifier[1] = nn.Conv2d(512, num_classes, kernel_size=(1,1), stride=(1,1))
+
+        elif(network_name == 'densenet'):
+            model = models.densenet161(pretrained=pretrained_val)
+            model.classifier = nn.Linear(1024, num_classes)
+
+        # elif(network_name == 'inception'):
+        #     model = models.inception_v3(pretrained=pretrained_val)
+
+        elif(network_name == 'googlenet'):
+            model = models.googlenet(pretrained=pretrained_val)
+            model.fc = nn.Linear(1024, num_classes)
+
+        elif(network_name == 'shufflenet'):
+            model = models.shufflenet_v2_x1_0(pretrained=pretrained_val)
+            model.fc = nn.Linear(1024, num_classes)
+
+        elif(network_name == 'mobilenet'):
+            model = models.mobilenet_v2(pretrained=pretrained_val)
+            model.classifier[1] = nn.Linear(1280, num_classes)
+
+        elif(network_name == 'resnext'):
+            model = models.resnext50_32x4d(pretrained=pretrained_val)
+            model.fc = nn.Linear(2048, num_classes)
+
+        elif(network_name == 'wide_resnet'):
+            model = models.wide_resnet50_2(pretrained=pretrained_val)
+            model.fc = nn.Linear(2048, num_classes)
+
+        elif(network_name == 'mnasnet'):
+            model = models.mnasnet1_0(pretrained=pretrained_val)
+            model.classifier[1] = nn.Linear(1280, num_classes)
+
+        else:
+            raise NotImplementedError("{} is not supported in TPOT yet. \
+                Supported: [resnet, alexnet, vgg, squeezenet, densenet, googlenet, shufflenet, mobilenet, resnext, wide_resnet, mnasnet]".format(network_name))
+
+
+        self.nn_model = model
+
+
+    def forward(self, x):
+        x = self.nn_model(x)
+
+        return x
+
+
 class _LSTM(nn.Module):
     # pylint: disable=arguments-differ
     def __init__(self, in_features, num_classes, hidden_size, num_layers, bidirectionality, dropout_prop, need_embeddings, vocab_size):
@@ -399,11 +490,6 @@ class _LSTM(nn.Module):
         self.num_layers = num_layers
         self.bidirectionality = bidirectionality
         self.need_embeddings = need_embeddings
-
-        #Embedding layer (need to make vocab size here - 10000 - not a magic number - ask Joe)
-        #The "1" is probably actually going to need to be how many elements represent each word
-        #Need to pull the "1" from the original vector being passed in (find length of the array within the array)
-        #Using sparse=True because likely to be sparse array
 
         #Expects that any padding will have been done with index 0
         if(need_embeddings):
@@ -639,7 +725,7 @@ class PytorchConvClassifier(PytorchClassifier):
         self.device = device
 
     def _more_tags(self):
-        return {'non_deterministic': True, 'binary_only': True}
+        return {'non_deterministic': True, 'binary_only': False}
 
     def predict(self, X):
         """Special predict method for convolutional implementations
@@ -668,6 +754,135 @@ class PytorchConvClassifier(PytorchClassifier):
         _, predicted = torch.max(outputs.data, 1)
         predictions = predicted.tolist()
         return np.reshape(predictions, (-1, 1))
+
+
+
+class PrebuiltPytorchConvClassifier(PytorchClassifier):
+    """Convolutional layer classifier, making use of prebuilt architectures in PyTorch, for use with TPOT.
+    """
+
+    def __init__(
+        self,
+        num_epochs=10,
+        batch_size=8,
+        learning_rate=0.01,
+        weight_decay=0,
+        verbose=False,
+        network_name="AlexNet",
+        pretrained=True,
+        optimizer_name="Adam",
+        activation_func_name="ReLU"
+    ):
+        self.num_epochs = num_epochs
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+        self.verbose = verbose
+        self.network_name = network_name
+        self.pretrained = pretrained
+        self.optimizer_name=optimizer_name
+        self.activation_func_name=activation_func_name
+
+        self.input_size = None
+        self.num_classes = None
+        self.network = None
+        self.loss_function = None
+        self.optimizer = None
+        self.data_loader = None
+        self.train_dset_len = None
+        self.device = None
+
+        #Unique classifier that allows for N-D inputs (assumed to be images)
+        self.allow_nd = True
+
+    def _init_model(self, X, y):
+        device = _get_cuda_device_if_available()
+
+        X, y = self.validate_inputs(X, y)
+
+        self.num_classes = len(set(y))
+
+
+        # Place X into the expected form if only 1 channel input but as a 3D array
+        # (as expected size for all prebuilt models is 4D with [N, 3, H, W], need to stack to RGB 
+        # if X is only a sequence of 2D images)
+        init_input_size = X.shape
+        if(X.ndim == 3):
+            X = np.stack((X, X, X), axis=-1)
+            X = X.reshape(init_input_size[0], -1, init_input_size[1], init_input_size[2])
+
+        X = torch.tensor(X, dtype=torch.float32)
+        y = torch.tensor(y, dtype=torch.long)
+
+        #Create normalizing transform for all prebuilt models in torchvision (except inception, which is unsupported)
+        #Also running the check here to see if torchvision is installed; if not, raise an error
+        try:
+            resize_norm_transform = transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+             )])
+        except ModuleNotFoundError:
+            raise
+
+        #Apply normalizing transform
+        X = [resize_norm_transform(im) for im in X]
+        X = torch.stack(X)
+
+        self.input_size = X.shape
+
+
+        train_dset = TensorDataset(X, y)
+
+        # Set parameters of the network
+        self.network = _pytorchPrebuiltCONV(
+            self.num_classes, self.pretrained, self.network_name
+        ).to(device)
+        
+        self.loss_function = nn.CrossEntropyLoss()
+        #self.optimizer = Adam(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        self.optimizer = _create_optimizer(self.optimizer_name, params=self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        self.data_loader = DataLoader(
+            train_dset, batch_size=self.batch_size, shuffle=True, num_workers=2
+        )
+        self.train_dset_len = len(train_dset)
+        self.device = device
+
+    def _more_tags(self):
+        return {'non_deterministic': True, 'binary_only': False}
+
+    def predict(self, X):
+        """Special predict method for convolutional implementations
+        Will make super class handle this properly in the future
+        """
+
+        if hasattr(self, "allow_nd"):
+            X = check_array(X, accept_sparse=True, allow_nd=self.allow_nd)
+        else:
+            X = check_array(X, accept_sparse=True, allow_nd=False)
+
+        X_size = X.shape
+
+        if(X.ndim == 3):
+            X = X.reshape(X_size[0], -1, X_size[1], X_size[2])
+
+        X_size_4D = X.shape
+
+        X = torch.tensor(X, dtype=torch.float32).to(self.device)
+
+        predictions = np.empty(X_size_4D[0], dtype=int)
+
+        #Feed images into the network (in the appropriate size for the network)
+        #Then store only the most highly predicted class for each
+        outputs = self.network(X)
+        _, predicted = torch.max(outputs.data, 1)
+        predictions = predicted.tolist()
+        return np.reshape(predictions, (-1, 1))
+
 
 
 
@@ -758,7 +973,7 @@ class PytorchLSTMClassifier(PytorchClassifier):
         self.device = device
 
     def _more_tags(self):
-        return {'non_deterministic': True, 'binary_only': True}
+        return {'non_deterministic': True, 'binary_only': False}
 
     def predict(self, X):
         """Special predict method for LSTM implementations
