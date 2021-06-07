@@ -865,16 +865,35 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         else:
             X = check_array(X, accept_sparse=True, allow_nd=False)
 
-        X_size = X.shape
-
+        # Place X into the expected form if only 1 channel input but as a 3D array
+        # (as expected size for all prebuilt models is 4D with [N, 3, H, W], need to stack to RGB 
+        # if X is only a sequence of 2D images)
+        init_input_size = X.shape
         if(X.ndim == 3):
-            X = X.reshape(X_size[0], -1, X_size[1], X_size[2])
+            X = np.stack((X, X, X), axis=-1)
+            X = X.reshape(init_input_size[0], -1, init_input_size[1], init_input_size[2])
 
-        X_size_4D = X.shape
+        X = torch.tensor(X, dtype=torch.float32)
 
-        X = torch.tensor(X, dtype=torch.float32).to(self.device)
+        #Create normalizing transform for all prebuilt models in torchvision (except inception, which is unsupported)
+        #Also running the check here to see if torchvision is installed; if not, raise an error
+        try:
+            resize_norm_transform = transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+             )])
+        except ModuleNotFoundError:
+            raise
 
-        predictions = np.empty(X_size_4D[0], dtype=int)
+        #Apply normalizing transform
+        X = [resize_norm_transform(im) for im in X]
+        X = torch.stack(X)
+
 
         #Feed images into the network (in the appropriate size for the network)
         #Then store only the most highly predicted class for each
