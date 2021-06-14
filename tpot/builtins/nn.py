@@ -45,7 +45,7 @@ try:
     from torch import nn
     from torch.autograd import Variable
     from torch.optim import Adam
-    from torch.utils.data import TensorDataset, DataLoader
+    from torch.utils.data import TensorDataset, DataLoader, Dataset
 except ModuleNotFoundError:
     raise
 
@@ -703,8 +703,8 @@ class PytorchConvClassifier(PytorchClassifier):
         self.input_size = X.shape
         self.num_classes = len(set(y))
 
-        X = torch.tensor(X, dtype=torch.float32)
-        y = torch.tensor(y, dtype=torch.long)
+        X = torch.tensor(X, dtype=torch.float32).to(device)
+        y = torch.tensor(y, dtype=torch.long).to(device)
 
         train_dset = TensorDataset(X, y)
 
@@ -803,7 +803,7 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         self.num_classes = len(set(y))
 
 
-        # Place X into the expected form if only 1 channel input but as a 3D array
+        # Place X into the expected form if only 1 channel input but as a 3D array (aka [N, H, W])
         # (as expected size for all prebuilt models is 4D with [N, 3, H, W], need to stack to RGB 
         # if X is only a sequence of 2D images)
         init_input_size = X.shape
@@ -811,8 +811,8 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
             X = np.stack((X, X, X), axis=-1)
             X = X.reshape(init_input_size[0], -1, init_input_size[1], init_input_size[2])
 
-        X = torch.tensor(X, dtype=torch.float32)
-        y = torch.tensor(y, dtype=torch.long)
+        X = torch.tensor(X, dtype=torch.float32).to(device)
+        y = torch.tensor(y, dtype=torch.long).to(device)
 
         #Create normalizing transform for all prebuilt models in torchvision (except inception, which is unsupported)
         #Also running the check here to see if torchvision is installed; if not, raise an error
@@ -829,14 +829,14 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         except ModuleNotFoundError:
             raise
 
-        #Apply normalizing transform
-        X = [resize_norm_transform(im) for im in X]
-        X = torch.stack(X)
+        #Apply normalizing transform - now done with dataloader
+        # X = [resize_norm_transform(im) for im in X]
+        # X = torch.stack(X)
 
         self.input_size = X.shape
 
 
-        train_dset = TensorDataset(X, y)
+        train_dset = CustomTensorDataset(X, y, resize_norm_transform)
 
         # Set parameters of the network
         self.network = _pytorchPrebuiltCONV(
@@ -856,8 +856,7 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         return {'non_deterministic': True, 'binary_only': False}
 
     def predict(self, X):
-        """Special predict method for convolutional implementations
-        Will make super class handle this properly in the future
+        """Special predict method for prebuilt convolutional implementations
         """
 
         if hasattr(self, "allow_nd"):
@@ -873,7 +872,7 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
             X = np.stack((X, X, X), axis=-1)
             X = X.reshape(init_input_size[0], -1, init_input_size[1], init_input_size[2])
 
-        X = torch.tensor(X, dtype=torch.float32)
+        X = torch.tensor(X, dtype=torch.float32).to(self.device)
 
         #Create normalizing transform for all prebuilt models in torchvision (except inception, which is unsupported)
         #Also running the check here to see if torchvision is installed; if not, raise an error
@@ -891,15 +890,30 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
             raise
 
         #Apply normalizing transform
-        X = [resize_norm_transform(im) for im in X]
-        X = torch.stack(X)
+        # X = [resize_norm_transform(im) for im in X]
+        # X = torch.stack(X)
 
+
+        predictions = np.empty(init_input_size[0], dtype=int)
 
         #Feed images into the network (in the appropriate size for the network)
         #Then store only the most highly predicted class for each
-        outputs = self.network(X)
-        _, predicted = torch.max(outputs.data, 1)
-        predictions = predicted.tolist()
+        #NOTE: uses a lot of memory as the transforms need to be applied to all the images at once
+
+        # outputs = self.network(X)
+        # _, predicted = torch.max(outputs.data, 1)
+        # predictions = predicted.tolist()
+        # return np.reshape(predictions, (-1, 1))
+
+        #To try to avoid hitting memory limits, only feed in images in one at a time 
+        #(and unsqueeze to make it 4D)
+        #Applying the transform to each as it is passed in
+        for i, im in enumerate(X):
+            output = self.network(torch.unsqueeze(resize_norm_transform(im),0))
+            _, prediction = torch.max(output.data, 1)
+
+            predictions[i] = int(prediction)
+
         return np.reshape(predictions, (-1, 1))
 
 
@@ -945,7 +959,7 @@ class PytorchLSTMClassifier(PytorchClassifier):
         self.vocab_size = None
         self.need_embeddings = None
 
-        #Unique classifier that allows for N-D inputs (assumed to be images)
+        #Unique classifier that allows for N-D inputs (assumed to be sequences or values to be encoded)
         self.allow_nd = True
 
     def _init_model(self, X, y):
@@ -1030,4 +1044,25 @@ class PytorchLSTMClassifier(PytorchClassifier):
             return np.reshape(predictions, (-1, 1))
 
 
+
+class CustomTensorDataset(Dataset):
+    """TensorDataset with support of transforms. Done to improve memory usage.
+    """
+    def __init__(self, X, y, transform=None):
+        self.X_vals = X
+        self.y_vals = y
+        self.transform = transform
+
+    def __getitem__(self, index):
+        x_out = self.X_vals[index]
+
+        if self.transform:
+            x_out = self.transform(x_out)
+
+        y_out = self.y_vals[index]
+
+        return x_out, y_out
+
+    def __len__(self):
+        return self.X_vals.size(0)
 
