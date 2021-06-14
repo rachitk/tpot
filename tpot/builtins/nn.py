@@ -847,7 +847,7 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         #self.optimizer = Adam(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         self.optimizer = _create_optimizer(self.optimizer_name, params=self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         self.data_loader = DataLoader(
-            train_dset, batch_size=self.batch_size, shuffle=True, num_workers=2
+            train_dset, batch_size=self.batch_size, shuffle=True, num_workers=0
         )
         self.train_dset_len = len(train_dset)
         self.device = device
