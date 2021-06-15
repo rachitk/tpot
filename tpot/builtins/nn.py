@@ -811,8 +811,11 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
             X = np.stack((X, X, X), axis=-1)
             X = X.reshape(init_input_size[0], -1, init_input_size[1], init_input_size[2])
 
-        X = torch.tensor(X, dtype=torch.float32).to(device)
-        y = torch.tensor(y, dtype=torch.long).to(device)
+        # X = torch.tensor(X, dtype=torch.float32).to(device)
+        # y = torch.tensor(y, dtype=torch.long).to(device)
+
+        X = torch.tensor(X, dtype=torch.float32)
+        y = torch.tensor(y, dtype=torch.long)
 
         #Create normalizing transform for all prebuilt models in torchvision (except inception, which is unsupported)
         #Also running the check here to see if torchvision is installed; if not, raise an error
@@ -847,7 +850,7 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         #self.optimizer = Adam(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         self.optimizer = _create_optimizer(self.optimizer_name, params=self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         self.data_loader = DataLoader(
-            train_dset, batch_size=self.batch_size, shuffle=True, num_workers=0
+            train_dset, batch_size=self.batch_size, shuffle=True, num_workers=2
         )
         self.train_dset_len = len(train_dset)
         self.device = device
