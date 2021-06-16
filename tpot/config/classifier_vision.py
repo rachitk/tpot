@@ -51,8 +51,7 @@ classifier_config_vision = {
         'weight_decay': [0, 1e-4, 1e-3, 1e-2],
         'network_name': ["resnet", "alexnet", "vgg", "squeezenet", "densenet", "googlenet", "shufflenet", "mobilenet", "resnext", "wide_resnet", "mnasnet"],
         'pretrained': [True, False],
-        'optimizer_name': ['Adam', 'SGD', 'RMSprop'],
-        'activation_func_name': ['ReLU', 'Tanh', 'Sigmoid']
+        'optimizer_name': ['Adam', 'SGD', 'RMSprop']
     },
 
 }

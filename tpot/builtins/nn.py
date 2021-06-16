@@ -170,7 +170,7 @@ class PytorchClassifier(PytorchEstimator, ClassifierMixin):
                 loss.backward()
                 self.optimizer.step()
 
-                if self.verbose and ((i + 1) % 100 == 0):
+                if self.verbose and ((i + 1) % 20 == 0):
                     print(
                         "Epoch: [%d/%d], Step: [%d/%d], Loss: %.4f"
                         % (
@@ -767,11 +767,10 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         batch_size=8,
         learning_rate=0.01,
         weight_decay=0,
-        verbose=False,
+        verbose=True,
         network_name="AlexNet",
         pretrained=True,
         optimizer_name="Adam",
-        activation_func_name="ReLU"
     ):
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -781,7 +780,6 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         self.network_name = network_name
         self.pretrained = pretrained
         self.optimizer_name=optimizer_name
-        self.activation_func_name=activation_func_name
 
         self.input_size = None
         self.num_classes = None
@@ -854,6 +852,11 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         )
         self.train_dset_len = len(train_dset)
         self.device = device
+
+        if(self.verbose):
+            print("Network: {}; optimizer: {}; epochs: {}, batch size: {}; num samples: {}".
+                format(self.network_name, self.optimizer_name, self.num_epochs, self.batch_size, y.shape))
+
 
     def _more_tags(self):
         return {'non_deterministic': True, 'binary_only': False}
