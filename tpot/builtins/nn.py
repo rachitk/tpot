@@ -188,7 +188,7 @@ class PytorchClassifier(PytorchEstimator, ClassifierMixin):
                                 epoch + 1,
                                 self.num_epochs,
                                 i + 1,
-                                ceil(self.train_dset_len / self.batch_size),
+                                np.ceil(self.train_dset_len / self.batch_size),
                                 loss.item(),
                             )
                         )
