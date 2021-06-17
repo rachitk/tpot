@@ -166,21 +166,36 @@ class PytorchClassifier(PytorchEstimator, ClassifierMixin):
                 self.optimizer.zero_grad()
                 outputs = self.network(samples)
 
-                loss = self.loss_function(outputs, labels)
-                loss.backward()
+                try:
+                    loss = self.loss_function(outputs, labels)
+                    loss.backward()
+                except Exception as e:
+                    print('Something weird happened with the loss function (crashed)')
+                    print(outputs)
+                    print(labels)
+                    raise
+
                 self.optimizer.step()
 
-                if self.verbose and ((i + 1) % 20 == 0):
-                    print(
-                        "Epoch: [%d/%d], Step: [%d/%d], Loss: %.4f"
-                        % (
-                            epoch + 1,
-                            self.num_epochs,
-                            i + 1,
-                            self.train_dset_len // self.batch_size,
-                            loss.item(),
+                if self.verbose:
+                    logging_step = min((self.train_dset_len // self.batch_size) // 10, 100)
+
+                    if ((i + 1) % logging_step == 0):
+                        print(
+                            "Epoch: [%d/%d], Step: [%d/%d], Loss: %.4f"
+                            % (
+                                epoch + 1,
+                                self.num_epochs,
+                                i + 1,
+                                ceil(self.train_dset_len / self.batch_size),
+                                loss.item(),
+                            )
                         )
-                    )
+
+                    if(np.isnan(loss.item())):
+                        print('Loss function produced NaN...')
+                        print(outputs)
+                        print(labels)
 
         # pylint: disable=attribute-defined-outside-init
         self.is_fitted_ = True
@@ -854,8 +869,8 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         self.device = device
 
         if(self.verbose):
-            print("Network: {}; optimizer: {}; epochs: {}, batch size: {}; num samples: {}".
-                format(self.network_name, self.optimizer_name, self.num_epochs, self.batch_size, y.shape))
+            print("Network: {}; optimizer: {}; epochs: {}; batch size: {}; num samples: {}; pretrained: {}".
+                format(self.network_name, self.optimizer_name, self.num_epochs, self.batch_size, y.shape, self.pretrained))
 
 
     def _more_tags(self):
@@ -878,7 +893,7 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
             X = np.stack((X, X, X), axis=-1)
             X = X.reshape(init_input_size[0], -1, init_input_size[1], init_input_size[2])
 
-        X = torch.tensor(X, dtype=torch.float32).to(self.device)
+        X = torch.tensor(X, dtype=torch.float32)
 
         #Create normalizing transform for all prebuilt models in torchvision (except inception, which is unsupported)
         #Also running the check here to see if torchvision is installed; if not, raise an error
@@ -915,7 +930,9 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         #(and unsqueeze to make it 4D)
         #Applying the transform to each as it is passed in
         for i, im in enumerate(X):
-            output = self.network(torch.unsqueeze(resize_norm_transform(im),0))
+            transformedIm = torch.unsqueeze(resize_norm_transform(im),0).to(self.device)
+
+            output = self.network(transformedIm)
             _, prediction = torch.max(output.data, 1)
 
             predictions[i] = int(prediction)
