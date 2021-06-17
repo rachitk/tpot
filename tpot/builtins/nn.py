@@ -179,7 +179,6 @@ class PytorchClassifier(PytorchEstimator, ClassifierMixin):
 
                 if self.verbose:
                     logging_step = max(min((self.train_dset_len // self.batch_size) // 10, 100),1)
-                    print('Logging every {} step(s)'.format(logging_step))
 
                     if ((i + 1) % logging_step == 0):
                         print(
