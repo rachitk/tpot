@@ -170,9 +170,9 @@ class PytorchClassifier(PytorchEstimator, ClassifierMixin):
                     loss = self.loss_function(outputs, labels)
                     loss.backward()
                 except Exception as e:
-                    print('Something weird happened with the loss function (crashed)')
-                    print(outputs)
-                    print(labels)
+                    # print('Something weird happened with the loss function (crashed)')
+                    # print(outputs)
+                    # print(labels)
                     raise
 
                 self.optimizer.step()
@@ -192,10 +192,10 @@ class PytorchClassifier(PytorchEstimator, ClassifierMixin):
                             )
                         )
 
-                    if(np.isnan(loss.item())):
-                        print('Loss function produced NaN...')
-                        print(outputs)
-                        print(labels)
+                    # if(np.isnan(loss.item())):
+                    #     print('Loss function produced NaN...')
+                    #     print(outputs)
+                    #     print(labels)
 
         # pylint: disable=attribute-defined-outside-init
         self.is_fitted_ = True
