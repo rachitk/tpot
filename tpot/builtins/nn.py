@@ -869,9 +869,8 @@ class PrebuiltPytorchConvClassifier(PytorchClassifier):
         self.device = device
 
         if(self.verbose):
-            print("Network: {}; optimizer: {}; epochs: {}; batch size: {}; num samples: {}; pretrained: {}".
-                format(self.network_name, self.optimizer_name, self.num_epochs, self.batch_size, y.shape, self.pretrained))
-
+            print("Network: {}; optimizer: {}; epochs: {}; batch size: {}; num samples: {}; pretrained: {}; weight decay: {}, learning rate: {}".
+                format(self.network_name, self.optimizer_name, self.num_epochs, self.batch_size, y.shape, self.pretrained, self.weight_decay, self.learning_rate))
 
     def _more_tags(self):
         return {'non_deterministic': True, 'binary_only': False}
